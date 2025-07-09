@@ -41,7 +41,8 @@ class MainActivity : ComponentActivity() {
                         onClick = {
                             Intent(this@MainActivity, CounterService::class.java).also {
                                 it.action = CounterService.CounterAction.START.name
-                                startService(it)
+                                //startService(it) Android 8.0+, it's restricted
+                                startForegroundService(it)
                             }
                         }
                     ) {
@@ -52,7 +53,8 @@ class MainActivity : ComponentActivity() {
                         onClick = {
                             Intent(this@MainActivity, CounterService::class.java).also {
                                 it.action = CounterService.CounterAction.STOP.name
-                                startService(it)
+                                //startService(it)
+                                startForegroundService(it)
                             }
                         }
                     ) {
