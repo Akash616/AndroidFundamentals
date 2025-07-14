@@ -1,11 +1,16 @@
 package io.akash.fundamentals
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
+import android.content.IntentSender
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -22,6 +27,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
+import com.google.android.gms.common.api.ResolvableApiException
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.LocationSettingsRequest
+import com.google.android.gms.location.Priority
 import io.akash.fundamentals.ui.theme.AndroidFundamentalsTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,8 +48,6 @@ class MainActivity : ComponentActivity() {
     *in the onCreate so by lazy make sure that this instance does not get initialized
     *until we do have application context*/
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-
     private val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         arrayOf(
             Manifest.permission.ACCESS_COARSE_LOCATION,
@@ -52,44 +61,25 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-            permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        ) {
-            // Permissions granted, check location services
-            if (!locationManager.isLocationEnabled()) {
-                locationEnableLauncher.launch(Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS))
-            }
-        } else {
-            // Handle permission denial
-            scope.launch {
-                locationText = "Location permissions denied"
-            }
-        }
-    }
+    private var onLocationReadyAction: (() -> Unit)? = null
 
-    private var locationText by mutableStateOf("")
-    private val locationEnableLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {
-        // Retry fetching location after user returns from settings
-        scope.launch {
-            locationManager.getLocation(
-                onSuccess = { latitude, longitude ->
-                    locationText = "Location: ..$latitude / ..$longitude"
-                },
-                onFailure = { error ->
-                    locationText = error
-                }
-            )
-        }
-    }
+    private lateinit var locationResolutionLauncher: ActivityResultLauncher<IntentSenderRequest>
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        requestPermissionLauncher.launch(permissions)
+
+        ActivityCompat.requestPermissions(this, permissions, 100)
+
+        // Register activity result launcher
+        locationResolutionLauncher =
+            registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+                if (result.resultCode == Activity.RESULT_OK) {
+                    onLocationReadyAction?.invoke()
+                } else {
+                    Toast.makeText(this, "Location not enabled", Toast.LENGTH_SHORT).show()
+                }
+            }
+
         setContent {
             AndroidFundamentalsTheme {
                 Screen()
@@ -104,26 +94,22 @@ class MainActivity : ComponentActivity() {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+            var locationText by remember {
+                mutableStateOf("")
+            }
+
             Text(text = locationText)
 
             Spacer(modifier = Modifier.height(16.dp))
 
             Button(
                 onClick = {
-                    scope.launch {
-                        if (!locationManager.isLocationEnabled()) {
-                            locationEnableLauncher.launch(Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS))
-                        } else {
-                            locationManager.getLocation(
-                                onSuccess = { latitude, longitude ->
-                                    locationText = "Location: ..$latitude / ..$longitude"
-                                },
-                                onFailure = { error ->
-                                    locationText = error
-                                }
-                            )
+                    onLocationReadyAction = {
+                        locationManager.getLocation { latitude, longitude ->
+                            locationText = "Location: ..$latitude / ..$longitude"
                         }
                     }
+                    checkLocationSettingsAndLaunch()
                 }
             ) {
                 Text(text = "Get Location")
@@ -149,5 +135,39 @@ class MainActivity : ComponentActivity() {
                 Text(text = "Stop Tracking")
             }
         }
+    }
+
+    private fun checkLocationSettingsAndLaunch() {
+        val locationRequest = LocationRequest.create().apply {
+            priority = Priority.PRIORITY_HIGH_ACCURACY
+        }
+
+        val settingsRequest = LocationSettingsRequest.Builder()
+            .addLocationRequest(locationRequest)
+            .setAlwaysShow(true)
+            .build()
+
+        val client = LocationServices.getSettingsClient(this)
+
+        client.checkLocationSettings(settingsRequest)
+            .addOnSuccessListener {
+                // Already satisfied
+                onLocationReadyAction?.invoke()
+            }
+            .addOnFailureListener { exception ->
+                if (exception is ResolvableApiException) {
+                    try {
+                        val intentSenderRequest = IntentSenderRequest.Builder(
+                            exception.resolution
+                        ).build()
+
+                        locationResolutionLauncher.launch(intentSenderRequest)
+                    } catch (e: IntentSender.SendIntentException) {
+                        e.printStackTrace()
+                    }
+                } else {
+                    Toast.makeText(this, "Can't change location settings", Toast.LENGTH_SHORT).show()
+                }
+            }
     }
 }
