@@ -119,7 +119,12 @@ class MainActivity : ComponentActivity() {
 
             Button(
                 onClick = {
-
+                    Intent(
+                        applicationContext, LocationTrackerService::class.java
+                    ).also {
+                        it.action = LocationTrackerService.Action.START.name
+                        startService(it)
+                    }
                 }
             ) {
                 Text(text = "Start Tracking")
@@ -129,7 +134,12 @@ class MainActivity : ComponentActivity() {
 
             Button(
                 onClick = {
-
+                    Intent(
+                        applicationContext, LocationTrackerService::class.java
+                    ).also {
+                        it.action = LocationTrackerService.Action.STOP.name
+                        startService(it)
+                    }
                 }
             ) {
                 Text(text = "Stop Tracking")
@@ -137,6 +147,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /*automatically by Google Play services — specifically by:
+    LocationSettingsRequest via FusedLocationProviderClient*/
     private fun checkLocationSettingsAndLaunch() {
         val locationRequest = LocationRequest.create().apply {
             priority = Priority.PRIORITY_HIGH_ACCURACY

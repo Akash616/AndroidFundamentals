@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 class LocationTrackerService: Service() {
 
@@ -39,6 +40,8 @@ class LocationTrackerService: Service() {
 
     private fun start() {
 
+        val locationManager = LocationManager(applicationContext)
+
         val notificationManager =
             getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
@@ -47,8 +50,25 @@ class LocationTrackerService: Service() {
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("Location Tracker")
             .setStyle(NotificationCompat.BigTextStyle())
+            //.build() not here
 
         startForeground(1, notification.build())
+
+        scope.launch {
+            locationManager.trackLocation().collect { location ->
+                val latitude = location.latitude.toString().takeLast(4)
+                val longitude = location.longitude.toString().takeLast(4)
+
+                //now update to notification
+                //every notification has id
+                notificationManager.notify(
+                    1,
+                    notification.setContentText(
+                        "Location: ..$latitude / ..$longitude"
+                    ).build()
+                )
+            }
+        }
     }
 
     private fun stop() {
